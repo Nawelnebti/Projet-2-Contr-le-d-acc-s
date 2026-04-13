@@ -1,0 +1,125 @@
+
+
+code clavier matriciel
+
+
+#include "MatrixKeypad.h"
+#include <stdint.h>
+#include <LiquidCrystal_I2C.h>
+
+const uint8_t rown = 4;
+const uint8_t coln = 3;
+
+uint8_t rowPins[rown] = {4, 5, 9, 10};
+uint8_t colPins[coln] = {8, 3, 2};
+
+char keymap[rown][coln] = {
+  {'1','2','3'},
+  {'4','5','6'},
+  {'7','8','9'},
+  {'*','0','#'}
+};
+
+MatrixKeypad_t *keypad;
+
+char key;
+
+// LEDs
+const int ledVert = 11;
+const int ledRouge = 13;
+
+
+
+LiquidCrystal_I2C lcd(0x27,16,2);
+
+// Code secret
+String codeSecret = "5555";
+String codeEntre = "";
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(ledVert, OUTPUT);
+  pinMode(ledRouge, OUTPUT);
+
+
+  lcd.init();
+  lcd.backlight();
+  lcd.print("Entrez code:");
+
+  keypad = MatrixKeypad_create((char*)keymap, rowPins, colPins, rown, coln);
+}
+
+void loop() {
+
+  MatrixKeypad_scan(keypad);
+
+  if(MatrixKeypad_hasKey(keypad)){
+    key = MatrixKeypad_getKey(keypad);
+    Serial.print(key);
+
+    if(key == '#'){ // validation du code
+      verifierCode();
+    }
+    else if(key == '*'){ // reset
+      codeEntre = "";
+      lcd.clear();
+      lcd.print("Reset...");
+      delay(500);
+      lcd.clear();
+      lcd.print("Entrez code:");
+    }
+    else {
+      codeEntre += key;
+      lcd.setCursor(0,1);
+      lcd.print(codeEntre);
+    }
+  }
+  
+
+  blink();
+  delay(20);
+}
+
+void verifierCode(){
+  lcd.clear();
+
+  if(codeEntre == codeSecret){
+    digitalWrite(ledVert, HIGH);
+    lcd.print("Code correct");
+
+
+  } else if (codeEntre != codeSecret) {
+    digitalWrite(ledRouge, HIGH);
+    lcd.print("Code incorrect");
+
+    
+  }else {
+    
+    digitalWrite(ledVert, LOW);
+    digitalWrite(ledRouge, LOW);
+  }
+
+  delay(2000);
+
+  // Reset après affichage
+  digitalWrite(ledVert, LOW);
+  digitalWrite(ledRouge, LOW);
+
+  codeEntre = "";
+  lcd.clear();
+  lcd.print("Entrez code:");
+}
+
+/* LED interne clignotante */
+void blink () {
+  static int led_state = LOW;
+  static long time = 0;
+
+  if(millis() - time > 500) {
+    led_state = !led_state;
+    digitalWrite(LED_BUILTIN, led_state);
+    time = millis();
+  }
+}
