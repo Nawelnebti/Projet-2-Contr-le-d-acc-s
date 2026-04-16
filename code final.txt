@@ -1,0 +1,147 @@
+#include <SPI.h>
+#include <MFRC522.h>
+#include <LiquidCrystal_I2C.h>
+#include "MatrixKeypad.h"
+
+// Configuration RFID
+#define SS_PIN 10
+#define RST_PIN 9
+MFRC522 rfid(SS_PIN, RST_PIN);
+
+// Configuration LCD (Adresse 0x27, 20 colonnes, 4 lignes)
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+
+// Configuration Clavier (Pins modifiées pour éviter les conflits avec le RFID)
+const uint8_t rown = 4;
+const uint8_t coln = 3;
+uint8_t rowPins[rown] = {7, 6, 5, 4}; // Changé pour libérer 9 et 10
+uint8_t colPins[coln] = {8, 3, 2};
+char keymap[rown][coln] = {
+  {'1','2','3'},
+  {'4','5','6'},
+  {'7','8','9'},
+  {'*','0','#'}
+};
+MatrixKeypad_t *keypad;
+
+// Variables et Pins
+const int ledVerte = A0; // Changé pour éviter conflit avec pin 2 du clavier
+const int ledRouge = 13;
+char key;
+String codeSecret = "5555";
+String codeEntre = "";
+
+// Badges autorisés
+byte badge1[] = { 149, 174, 170, 165 };
+byte badge2[] = { 229, 72, 176, 79 };
+
+void setup() {
+  Serial.begin(9600);
+  
+  // Init SPI et RFID
+  SPI.begin();
+  rfid.PCD_Init();
+
+  // Init LCD
+  lcd.init();
+  lcd.backlight();
+  lcd.print("Systeme pret");
+  delay(1000);
+  lcd.clear();
+  lcd.print("Badge ou Code:");
+
+  // Init Clavier
+  keypad = MatrixKeypad_create((char*)keymap, rowPins, colPins, rown, coln);
+
+  // Init LEDs
+  pinMode(ledVerte, OUTPUT);
+  pinMode(ledRouge, OUTPUT);
+  
+  Serial.println(F("Système prêt. Scannez un badge ou tapez un code..."));
+}
+
+void loop() {
+  // 1. Gestion du RFID
+  readRFID();
+
+  // 2. Gestion du Clavier
+  MatrixKeypad_scan(keypad);
+  if(MatrixKeypad_hasKey(keypad)){
+    key = MatrixKeypad_getKey(keypad);
+    
+    if(key == '7'){ // Validation
+      verifierCode();
+    }
+    else if(key == '8'){ // Reset
+      codeEntre = "";
+      lcd.clear();
+      lcd.print("Reset...");
+      delay(500);
+      lcd.clear();
+      lcd.print("Badge ou Code:");
+    }
+    else {
+      codeEntre += key;
+      lcd.setCursor(0, 1);
+      lcd.print(codeEntre);
+    }
+  }
+  
+  delay(20);
+}
+
+void readRFID() {
+  if (!rfid.PICC_IsNewCardPresent()) return;
+  if (!rfid.PICC_ReadCardSerial()) return;
+
+  lcd.clear();
+  if (checkAccess(rfid.uid.uidByte, rfid.uid.size)) {
+    Serial.println(F("ACCÈS AUTORISÉ (RFID)"));
+    lcd.print("Porte ouverte!");
+    digitalWrite(ledVerte, HIGH);
+    delay(1000);
+    digitalWrite(ledVerte, LOW);
+  } else {
+    Serial.print(F("ACCÈS REFUSÉ !"));
+    lcd.print("Badge inconnu");
+    digitalWrite(ledRouge, HIGH);
+    delay(1000);
+    digitalWrite(ledRouge, LOW);
+  }
+  
+  rfid.PICC_HaltA();
+  rfid.PCD_StopCrypto1();
+  
+  delay(1000);
+  lcd.clear();
+  lcd.print("Badge ou Code:");
+}
+
+bool checkAccess(byte *scannedUID, byte size) {
+  bool match1 = true, match2 = true;
+  for (byte i = 0; i < size; i++) {
+    if (scannedUID[i] != badge1[i]) match1 = false;
+    if (scannedUID[i] != badge2[i]) match2 = false;
+  }
+  return (match1 || match2);
+}
+
+void verifierCode(){
+  lcd.clear();
+  if(codeEntre == codeSecret){
+    lcd.print("Code correct");
+    digitalWrite(ledVerte, HIGH); // Utilisation LED verte pour succès
+    delay(1000);
+    digitalWrite(ledVerte, LOW);
+  } else {
+    lcd.print("Code incorrect");
+    digitalWrite(ledRouge, HIGH);
+    delay(1000);
+    digitalWrite(ledRouge, LOW);
+  }
+
+  codeEntre = "";
+  delay(1000);
+  lcd.clear();
+  lcd.print("Badge ou Code:");
+}
